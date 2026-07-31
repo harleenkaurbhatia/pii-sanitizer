@@ -48,6 +48,10 @@
   function findChatInput() {
     // Try multiple selectors that Claude.ai might use
     const selectors = [
+      'div.tiptap.ProseMirror[role="textbox"]',
+      'div.ProseMirror.tiptap[role="textbox"]',
+      'div.ProseMirror[role="textbox"]',
+      'div.tiptap[role="textbox"]',
       'div[contenteditable="true"][role="textbox"]',
       'div.ProseMirror[contenteditable="true"]',
       '[data-testid="chat-input"] div[contenteditable="true"]',
@@ -60,6 +64,7 @@
     for (const selector of selectors) {
       const element = document.querySelector(selector);
       if (element && isChatInput(element)) {
+        console.log('PII Sanitizer: Found input with selector:', selector);
         return element;
       }
     }
@@ -107,17 +112,26 @@
         event.stopPropagation();
         event.stopImmediatePropagation();
 
+        // Clear the input immediately so user doesn't see it change
+        updateInputText(input, '');
+
         sanitizeText(text).then(sanitized => {
-          // Update input with sanitized text
-          updateInputText(input, sanitized);
-          // Trigger send after a small delay
+          // Send the sanitized message programmatically without showing it
+          // We'll set it briefly, send, then clear
           setTimeout(() => {
-            event.target.dispatchEvent(new KeyboardEvent('keydown', {
+            updateInputText(input, sanitized);
+            // Trigger Enter to send
+            input.dispatchEvent(new KeyboardEvent('keydown', {
               key: 'Enter',
               shiftKey: false,
               bubbles: true,
               cancelable: true
             }));
+
+            // Clear input after sending
+            setTimeout(() => {
+              updateInputText(input, '');
+            }, 50);
           }, 50);
         });
       }
@@ -144,11 +158,19 @@
       event.stopPropagation();
       event.stopImmediatePropagation();
 
+      // Clear input immediately
+      updateInputText(input, '');
+
       sanitizeText(text).then(sanitized => {
-        updateInputText(input, sanitized);
-        // Re-trigger the click after sanitization
+        // Set sanitized text and click send
         setTimeout(() => {
+          updateInputText(input, sanitized);
           event.target.click();
+
+          // Clear input after sending
+          setTimeout(() => {
+            updateInputText(input, '');
+          }, 50);
         }, 50);
       });
     }

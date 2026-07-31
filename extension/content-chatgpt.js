@@ -130,16 +130,25 @@
         event.stopPropagation();
         event.stopImmediatePropagation();
 
+        // Clear the input immediately so user doesn't see it change
+        setInputText(input, '');
+
         sanitizeText(text).then(sanitized => {
-          setInputText(input, sanitized);
-          // Trigger send after a small delay
+          // Send the sanitized message without showing it
           setTimeout(() => {
-            event.target.dispatchEvent(new KeyboardEvent('keydown', {
+            setInputText(input, sanitized);
+            // Trigger Enter to send
+            input.dispatchEvent(new KeyboardEvent('keydown', {
               key: 'Enter',
               shiftKey: false,
               bubbles: true,
               cancelable: true
             }));
+
+            // Clear input after sending
+            setTimeout(() => {
+              setInputText(input, '');
+            }, 50);
           }, 50);
         });
       }
@@ -158,11 +167,19 @@
       event.stopPropagation();
       event.stopImmediatePropagation();
 
+      // Clear input immediately
+      setInputText(input, '');
+
       sanitizeText(text).then(sanitized => {
-        setInputText(input, sanitized);
-        // Re-trigger the click after sanitization
+        // Set sanitized text and click send
         setTimeout(() => {
+          setInputText(input, sanitized);
           event.target.click();
+
+          // Clear input after sending
+          setTimeout(() => {
+            setInputText(input, '');
+          }, 50);
         }, 50);
       });
     }
