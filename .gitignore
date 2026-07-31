@@ -1,4 +1,33 @@
-venv/
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+.eggs/
+dist/
+build/
 *.pyc
+
+# Server logs
+server.log
+*.log
+
+# Extension build artifacts
+extension/__pycache__/
+
+# macOS
 .DS_Store
+
+# VS Code
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.swp
+*~
