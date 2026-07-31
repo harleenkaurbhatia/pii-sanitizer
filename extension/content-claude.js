@@ -102,20 +102,28 @@
 
   // Intercept Enter key press
   function handleKeyDown(event) {
+    console.log('PII Sanitizer: Keydown event:', event.key, 'shift:', event.shiftKey, 'target:', event.target);
+
     // Only intercept Enter (not Shift+Enter which typically creates new line)
     if (event.key === 'Enter' && !event.shiftKey) {
       const input = event.target;
       const text = input.innerText || input.textContent || '';
+
+      console.log('PII Sanitizer: Enter pressed, text:', text);
 
       if (text.trim()) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
 
+        console.log('PII Sanitizer: Intercepted Enter, sanitizing...');
+
         // Clear the input immediately so user doesn't see it change
         updateInputText(input, '');
 
         sanitizeText(text).then(sanitized => {
+          console.log('PII Sanitizer: Sanitized text:', sanitized);
+
           // Send the sanitized message programmatically without showing it
           // We'll set it briefly, send, then clear
           setTimeout(() => {
@@ -180,13 +188,23 @@
   function setupInterception() {
     const input = findChatInput();
     if (!input) {
+      console.log('PII Sanitizer: No input found, retrying...');
       // Try again after a delay
       setTimeout(setupInterception, 1000);
       return;
     }
 
+    console.log('PII Sanitizer: Setting up interception on input:', input);
+
     // Add keydown listener for Enter key
     input.addEventListener('keydown', handleKeyDown, true);
+    console.log('PII Sanitizer: Added keydown event listener to input');
+
+    // Verify the listener was added
+    setTimeout(() => {
+      const listeners = getEventListeners?.(input);
+      console.log('PII Sanitizer: Current event listeners:', listeners?.keydown?.length || 0, 'keydown listeners');
+    }, 100);
 
     // Monitor for send button clicks using event delegation
     document.addEventListener('click', (event) => {
@@ -200,6 +218,7 @@
     setInterval(() => {
       const currentInput = findChatInput();
       if (currentInput && currentInput !== input) {
+        console.log('PII Sanitizer: Input changed, re-attaching listeners');
         input.removeEventListener('keydown', handleKeyDown);
         currentInput.addEventListener('keydown', handleKeyDown, true);
       }
