@@ -8,7 +8,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from PIL import Image, ImageDraw
-from presidio_analyzer import AnalyzerEngine
+from presidio_analyzer import AnalyzerEngine, Pattern, PatternRecognizer
 from presidio_anonymizer import AnonymizerEngine
 
 app = FastAPI()
@@ -22,7 +22,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-analyzer = AnalyzerEngine()
+def _build_analyzer():
+    engine = AnalyzerEngine()
+
+    # Presidio's built-in recognizers cover general PII (email, phone, name,
+    # credit card, SSN, ...) but have no concept of API keys/secrets - add
+    # pattern recognizers for the common key formats people paste into chats.
+    api_key_patterns = [
+        Pattern(name="openai_api_key", regex=r"\bsk-(proj-|ant-)?[A-Za-z0-9_-]{20,}\b", score=0.9),
+        Pattern(name="aws_access_key", regex=r"\bAKIA[0-9A-Z]{16}\b", score=0.9),
+        Pattern(name="github_token", regex=r"\bgh[pousr]_[A-Za-z0-9]{36,}\b", score=0.9),
+        Pattern(name="slack_token", regex=r"\bxox[baprs]-[0-9A-Za-z-]{10,}\b", score=0.85),
+        Pattern(name="google_api_key", regex=r"\bAIza[0-9A-Za-z_-]{35}\b", score=0.9),
+        Pattern(name="stripe_key", regex=r"\b(sk|pk)_live_[0-9a-zA-Z]{20,}\b", score=0.9),
+        Pattern(name="jwt", regex=r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b", score=0.7),
+        Pattern(name="generic_bearer_token", regex=r"\bBearer\s+[A-Za-z0-9._-]{20,}\b", score=0.6),
+    ]
+    engine.registry.add_recognizer(
+        PatternRecognizer(supported_entity="API_KEY", patterns=api_key_patterns)
+    )
+    return engine
+
+
+analyzer = _build_analyzer()
 anonymizer = AnonymizerEngine()
 
 MAX_FILE_BYTES = 20 * 1024 * 1024  # 20MB

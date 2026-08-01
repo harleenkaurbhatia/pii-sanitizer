@@ -22,7 +22,8 @@
     LOCATION: 'Location',
     DATE_TIME: 'Date',
     URL: 'URL',
-    IP_ADDRESS: 'IP address'
+    IP_ADDRESS: 'IP address',
+    API_KEY: 'API key'
   };
 
   function formatEntity(type) {

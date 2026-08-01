@@ -73,6 +73,15 @@ The Presidio library detects and redacts:
 - Addresses
 - Locations (cities, states, countries)
 
+Plus custom pattern recognizers for common API keys/secrets:
+- OpenAI / Anthropic-style keys (`sk-...`)
+- AWS access keys (`AKIA...`)
+- GitHub tokens (`ghp_...`, `gho_...`, etc.)
+- Slack tokens (`xoxb-...`, etc.)
+- Google API keys (`AIza...`)
+- Stripe keys (`sk_live_...`, `pk_live_...`)
+- JWTs and generic `Bearer <token>` strings
+
 ## Known limitations
 
 - **Scanned PDFs**: pages with little to no real text layer are OCR'd automatically (same as images), so a scanned/photographed document still gets checked rather than silently reported as "clean."
