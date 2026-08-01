@@ -22,6 +22,12 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+File uploads (PDF/image) also need the Tesseract OCR binary installed system-wide (not just a Python package):
+
+```bash
+brew install tesseract  # macOS
+```
+
 ### 2. Start the PII sanitization server
 
 ```bash
@@ -51,6 +57,7 @@ The server will start on `http://localhost:8787`. The first time you run it, it 
 - **Toggle sanitization**: Click the extension icon to enable/disable PII sanitization
 - **Server status**: The extension shows a red "!" badge if the local server is unreachable
 - **Works on both**: Claude.ai and ChatGPT.com
+- **File uploads**: Attaching a PDF or image (screenshot, scanned doc) is scanned before it's sent. If it contains sensitive data, you'll see a prompt listing what was found, with the choice to upload a redacted version, upload the original anyway, or cancel the upload.
 
 ## What gets redacted
 
@@ -66,11 +73,19 @@ The Presidio library detects and redacts:
 - Addresses
 - Locations (cities, states, countries)
 
+## Known limitations
+
+- **Scanned PDFs**: pages with little to no real text layer are OCR'd automatically (same as images), so a scanned/photographed document still gets checked rather than silently reported as "clean."
+- **OCR accuracy**: OCR-based scanning (images and scanned PDF pages) is best-effort. Low-quality scans or unusual fonts can cause the OCR engine to misread or fragment text (e.g. split an email into disconnected pieces), which can leave partial PII visible even after redaction. A heuristic redacts words neighboring any "@" character to catch fragmented emails, which can occasionally over-redact a nearby unrelated word — a deliberate trade-off, since over-redacting a benign word is safer than under-redacting real PII.
+- **Fillable PDF forms**: text typed into PDF form fields (not part of the page's regular text) isn't currently extracted or scanned.
+- Health-specific entities (diagnoses, medication names, ICD codes) aren't detected — only general PII (email, name, phone, credit card, SSN, etc.) via Presidio.
+
 ## Requirements
 
 - Python 3.8+
 - Chrome/Chromium browser
 - ~500MB disk space (for spaCy language model)
+- Tesseract OCR binary (needed for scanning images, and for scanned/image-only PDF pages — regular text-based PDFs work without it)
 
 ## Troubleshooting
 

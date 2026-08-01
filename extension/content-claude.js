@@ -1,252 +1,297 @@
-// Content script for Claude.ai - intercepts messages before they're sent
-
+// PII Sanitizer for Claude.ai - Simple working version
 (function() {
   'use strict';
 
-  let isEnabled = true;
-  let sanitizeServerHealthy = true;
+  console.log('PII Sanitizer: Claude.ai simple version loaded');
 
-  // Check if extension is enabled from storage
+  let isEnabled = true;
+  let inputElement = null;
+  let sendButton = null;
+  let observer = null;
+  let isProcessing = false;
+
   function loadEnabledState() {
-    chrome.storage.local.get(['piiSanitizerEnabled'], (result) => {
-      isEnabled = result.piiSanitizerEnabled !== false; // Default to true
-    });
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage) {
+        chrome.storage.local.get(['piiSanitizerEnabled'], (result) => {
+          isEnabled = result.piiSanitizerEnabled !== false;
+          console.log('Extension enabled:', isEnabled);
+        });
+      }
+    } catch (e) {
+      console.log('Extension not checking state');
+    }
   }
 
-  // Sanitize text by calling local server
   async function sanitizeText(text) {
-    if (!isEnabled || !sanitizeServerHealthy) {
+    if (!isEnabled) {
       return text;
     }
 
     try {
+      console.log('Sanitizing:', text.substring(0, 30));
+
       const response = await fetch('http://localhost:8787/sanitize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: text }),
-        signal: AbortSignal.timeout(5000) // 5 second timeout
+        signal: AbortSignal.timeout(3000)
       });
 
       if (!response.ok) {
-        console.error('PII Sanitizer: Server returned error', response.status);
+        console.error('Server error:', response.status);
         return text;
       }
 
       const data = await response.json();
+      console.log('Sanitized:', data.sanitized);
       return data.sanitized || text;
+
     } catch (error) {
-      console.error('PII Sanitizer: Failed to sanitize text', error);
-      sanitizeServerHealthy = false;
-      // Notify background to show error badge
-      chrome.runtime.sendMessage({ action: 'checkServerHealth' });
+      console.error('Sanitization failed:', error.message);
+      console.log('Returning original text due to error');
       return text;
     }
   }
 
-  // Find the chat input element on Claude.ai
-  // Claude.ai uses a contenteditable div for input
   function findChatInput() {
-    // Try multiple selectors that Claude.ai might use
+    console.log('Looking for chat input...');
+
     const selectors = [
-      'div.tiptap.ProseMirror[role="textbox"]',
-      'div.ProseMirror.tiptap[role="textbox"]',
-      'div.ProseMirror[role="textbox"]',
-      'div.tiptap[role="textbox"]',
-      'div[contenteditable="true"][role="textbox"]',
-      'div.ProseMirror[contenteditable="true"]',
-      '[data-testid="chat-input"] div[contenteditable="true"]',
-      'div[data-message-author-role="user"] div[contenteditable="true"]',
-      // More specific Claude selectors
-      '.ql-editor[contenteditable="true"]',
-      'div[contenteditable="true"].Public-DraftEditor-content'
+      '[contenteditable="true"][role="textbox"]',
+      '.ProseMirror[contenteditable="true"]',
+      '.tiptap.ProseMirror[role="textbox"]',
+      '.tiptap[contenteditable="true"]',
+      '[role="textbox"]',
+      'div[contenteditable="true"]',
+      '[contenteditable="true"]'
     ];
 
     for (const selector of selectors) {
       const element = document.querySelector(selector);
-      if (element && isChatInput(element)) {
-        console.log('PII Sanitizer: Found input with selector:', selector);
-        return element;
+      if (element) {
+        const rect = element.getBoundingClientRect();
+        const isVisible = rect.width > 0 && rect.height > 0;
+        const reasonableSize = rect.width < 2000 && rect.height < 1000;
+
+        if (isVisible && reasonableSize) {
+          console.log('Found chat input via:', selector);
+          console.log('Element:', element.tagName, element.className);
+          return element;
+        }
       }
     }
+
+    console.error('No chat input found');
     return null;
   }
 
-  // Check if element is likely the chat input
-  function isChatInput(element) {
-    if (!element) return false;
-    const rect = element.getBoundingClientRect();
-    // Should be visible and reasonably sized
-    return rect.width > 100 && rect.height > 20 && rect.width < 1000 && rect.height < 500;
-  }
-
-  // Find send button
   function findSendButton() {
     const selectors = [
-      'button[aria-label*="Send"]',
-      'button[aria-label*="send"]',
-      'button[type="submit"]',
-      'button[data-testid="send-button"]',
-      'button:has(svg[data-icon="arrow-up"])',
-      'button:has(svg[data-icon="send"])',
-      'button:has(svg):not([aria-label*="Stop"])'
+      'button[aria-label="Send message"]',
+      'button[aria-label*="Send" i]',
+      '[data-testid="send-button"]'
     ];
 
     for (const selector of selectors) {
-      const button = document.querySelector(selector);
-      if (button && !button.disabled && !button.getAttribute('disabled')) {
-        return button;
+      const element = document.querySelector(selector);
+      if (element) {
+        const rect = element.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          return element;
+        }
       }
     }
+
     return null;
   }
 
-  // Intercept Enter key press
-  function handleKeyDown(event) {
-    console.log('PII Sanitizer: Keydown event:', event.key, 'shift:', event.shiftKey, 'target:', event.target);
-
-    // Only intercept Enter (not Shift+Enter which typically creates new line)
-    if (event.key === 'Enter' && !event.shiftKey) {
-      const input = event.target;
-      const text = input.innerText || input.textContent || '';
-
-      console.log('PII Sanitizer: Enter pressed, text:', text);
-
-      if (text.trim()) {
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-
-        console.log('PII Sanitizer: Intercepted Enter, sanitizing...');
-
-        // Clear the input immediately so user doesn't see it change
-        updateInputText(input, '');
-
-        sanitizeText(text).then(sanitized => {
-          console.log('PII Sanitizer: Sanitized text:', sanitized);
-
-          // Send the sanitized message programmatically without showing it
-          // We'll set it briefly, send, then clear
-          setTimeout(() => {
-            updateInputText(input, sanitized);
-            // Trigger Enter to send
-            input.dispatchEvent(new KeyboardEvent('keydown', {
-              key: 'Enter',
-              shiftKey: false,
-              bubbles: true,
-              cancelable: true
-            }));
-
-            // Clear input after sending
-            setTimeout(() => {
-              updateInputText(input, '');
-            }, 50);
-          }, 50);
-        });
-      }
-    }
+  function getTextFromInput(input) {
+    return input.innerText || input.textContent || '';
   }
 
-  // Update text in contenteditable div
-  function updateInputText(element, text) {
-    element.innerText = text;
-    // Trigger input event to let the app know content changed
-    element.dispatchEvent(new Event('input', { bubbles: true }));
-    element.dispatchEvent(new Event('change', { bubbles: true }));
+  function setTextInInput(input, text) {
+    input.innerText = text;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-  // Intercept click on send button
-  function handleSendClick(event) {
-    const input = findChatInput();
-    if (!input) return;
-
-    const text = input.innerText || input.textContent || '';
-
-    if (text.trim() && isEnabled && sanitizeServerHealthy) {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-
-      // Clear input immediately
-      updateInputText(input, '');
-
-      sanitizeText(text).then(sanitized => {
-        // Set sanitized text and click send
-        setTimeout(() => {
-          updateInputText(input, sanitized);
-          event.target.click();
-
-          // Clear input after sending
-          setTimeout(() => {
-            updateInputText(input, '');
-          }, 50);
-        }, 50);
+  function reportTranscript(originalText, textToSend) {
+    if (typeof chrome !== 'undefined' && chrome.runtime) {
+      chrome.runtime.sendMessage({
+        action: 'saveTranscriptEntry',
+        site: 'claude.ai',
+        original: originalText,
+        sanitized: textToSend
       });
     }
   }
 
-  // Set up interception
-  function setupInterception() {
-    const input = findChatInput();
-    if (!input) {
-      console.log('PII Sanitizer: No input found, retrying...');
-      // Try again after a delay
-      setTimeout(setupInterception, 1000);
+  // Sanitizes the input's current text, then calls submit() to actually
+  // send it. Guarded by isProcessing so the synthetic Enter/click submit()
+  // triggers below don't re-enter this function recursively.
+  async function sanitizeAndSubmit(input, submit) {
+    if (isProcessing) return;
+
+    const originalText = getTextFromInput(input);
+    if (!originalText.trim()) return;
+
+    isProcessing = true;
+    try {
+      let textToSend = originalText;
+
+      if (isEnabled) {
+        console.log('Attempting sanitization...');
+        textToSend = await sanitizeText(originalText);
+        console.log(textToSend !== originalText ? 'Sanitized successfully!' : 'Text unchanged, sending as-is');
+      } else {
+        console.log('Extension disabled, sending original');
+      }
+
+      reportTranscript(originalText, textToSend);
+      setTextInInput(input, textToSend);
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+      submit(input);
+    } catch (error) {
+      console.error('Error:', error);
+      console.log('Fallback: sending original');
+      setTextInInput(input, originalText);
+      await new Promise(resolve => setTimeout(resolve, 50));
+      submit(input);
+    } finally {
+      isProcessing = false;
+    }
+  }
+
+  function submitViaEnter(input) {
+    input.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      shiftKey: false,
+      bubbles: true,
+      cancelable: true
+    }));
+  }
+
+  function submitViaButtonClick() {
+    const button = findSendButton();
+    if (button) {
+      button.click();
+    } else {
+      console.error('Send button not found for programmatic submit, falling back to Enter');
+      submitViaEnter(inputElement);
+    }
+  }
+
+  function handleKeyDown(event) {
+    if (event.key !== 'Enter' || event.shiftKey) {
+      return;
+    }
+    if (isProcessing) {
+      // Our own synthetic redispatch to actually submit - let it through.
       return;
     }
 
-    console.log('PII Sanitizer: Setting up interception on input:', input);
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
 
-    // Add keydown listener for Enter key
-    input.addEventListener('keydown', handleKeyDown, true);
-    console.log('PII Sanitizer: Added keydown event listener to input');
-
-    // Verify the listener was added
-    setTimeout(() => {
-      const listeners = getEventListeners?.(input);
-      console.log('PII Sanitizer: Current event listeners:', listeners?.keydown?.length || 0, 'keydown listeners');
-    }, 100);
-
-    // Monitor for send button clicks using event delegation
-    document.addEventListener('click', (event) => {
-      const button = event.target.closest('button');
-      if (button && isSendButton(button)) {
-        handleSendClick(event);
-      }
-    }, true);
-
-    // Re-setup periodically to catch DOM changes
-    setInterval(() => {
-      const currentInput = findChatInput();
-      if (currentInput && currentInput !== input) {
-        console.log('PII Sanitizer: Input changed, re-attaching listeners');
-        input.removeEventListener('keydown', handleKeyDown);
-        currentInput.addEventListener('keydown', handleKeyDown, true);
-      }
-    }, 5000);
+    sanitizeAndSubmit(event.target, submitViaEnter);
   }
 
-  function isSendButton(button) {
-    const ariaLabel = button.getAttribute('aria-label') || '';
-    return ariaLabel.toLowerCase().includes('send');
+  function handleSendClick(event) {
+    if (isProcessing) {
+      // Our own programmatic re-click to actually submit - let it through.
+      return;
+    }
+    if (!inputElement) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+
+    sanitizeAndSubmit(inputElement, submitViaButtonClick);
   }
 
-  // Listen for storage changes (toggle state)
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.piiSanitizerEnabled) {
-      isEnabled = changes.piiSanitizerEnabled.newValue !== false;
-    }
-  });
+  function setupInterception() {
+    console.log('Setting up interception...');
 
-  // Listen for server health updates
-  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'serverHealth') {
-      sanitizeServerHealthy = request.isHealthy;
+    inputElement = findChatInput();
+
+    if (!inputElement) {
+      console.log('Input not found, waiting with observer...');
+
+      observer = new MutationObserver(() => {
+        inputElement = findChatInput();
+        if (inputElement && !inputElement._hasListener) {
+          console.log('Input found via observer, attaching listener');
+          attachListener();
+        }
+        attachSendButtonListener();
+      });
+
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['contenteditable', 'role', 'data-id', 'placeholder', 'aria-label']
+      });
+
+      return;
     }
-  });
+
+    attachListener();
+    attachSendButtonListener();
+  }
+
+  function attachListener() {
+    if (!inputElement || inputElement._hasListener) return;
+
+    console.log('Attaching listener to input');
+    inputElement.addEventListener('keydown', handleKeyDown, true);
+    inputElement._hasListener = true;
+
+    console.log('Input element:', inputElement.tagName, inputElement.className);
+  }
+
+  function attachSendButtonListener() {
+    const button = findSendButton();
+    if (!button || button === sendButton) return;
+
+    if (sendButton) {
+      sendButton.removeEventListener('click', handleSendClick, true);
+    }
+
+    console.log('Attaching listener to send button');
+    button.addEventListener('click', handleSendClick, true);
+    sendButton = button;
+  }
+
+  if (typeof chrome !== 'undefined' && chrome.storage) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.piiSanitizerEnabled) {
+        isEnabled = changes.piiSanitizerEnabled.newValue !== false;
+        console.log('Extension state changed:', isEnabled);
+      }
+    });
+  }
 
   // Initialize
   loadEnabledState();
   setupInterception();
 
-  console.log('PII Sanitizer: Claude.ai content script loaded');
+  setTimeout(setupInterception, 1000);
+  setTimeout(setupInterception, 3000);
+  setTimeout(setupInterception, 5000);
+  setInterval(() => {
+    const currentInput = findChatInput();
+    if (currentInput && currentInput !== inputElement) {
+      console.log('Input changed, re-attaching');
+      inputElement = currentInput;
+      attachListener();
+    }
+    attachSendButtonListener();
+  }, 10000);
+
+  console.log('PII Sanitizer initialized');
 })();

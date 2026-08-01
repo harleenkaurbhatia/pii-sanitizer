@@ -31,3 +31,36 @@ extension/__pycache__/
 *.tmp
 *.swp
 *~
+
+# Local debugging/test scratch files (not part of the shipped extension)
+DEBUG_INSTRUCTIONS.md
+FINAL_TEST_INSTRUCTIONS.md
+MANUAL_TEST_GUIDE.md
+TEST_REPORT.md
+TEST_RESULTS.md
+test-stealth-mode.md
+auto-debug.sh
+auto-test-now.py
+automated-browser-test.py
+debug-extension.js
+debug-test.html
+diagnose-extension.py
+extension/content-claude-debug.js
+extension/debug-content-claude.js
+fix-extension.py
+mcp-test-config.json
+run-tests.sh
+test-browser-cdp.py
+test-communication.html
+test-extension-loading.html
+test-extension-simple.py
+test-extension.js
+test-fetch.html
+test-page.html
+test-pii-extension.py
+test-real-browser.html
+test-selectors.js
+test-simulation.html
+
+# Third-party LiveMCP extension source (unrelated to this project)
+livemcp/
